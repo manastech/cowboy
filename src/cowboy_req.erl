@@ -74,6 +74,7 @@
 %% Request body API.
 -export([has_body/1]).
 -export([body_length/1]).
+-export([set_timeout/2]).
 -export([init_stream/4]).
 -export([stream_body/1]).
 -export([stream_body/2]).
@@ -118,6 +119,9 @@
 	| {domain, binary()} | {path, binary()}
 	| {secure, boolean()} | {http_only, boolean()}.
 -type cookie_opts() :: [cookie_option()].
+
+-define(DEFAULT_TIMEOUT, 5000).
+
 -export_type([cookie_opts/0]).
 
 -type content_decode_fun() :: fun((binary())
@@ -139,6 +143,7 @@
 	socket = undefined :: any(),
 	transport = undefined :: undefined | module(),
 	connection = keepalive :: keepalive | close,
+  timeout = ?DEFAULT_TIMEOUT :: non_neg_integer(),
 
 	%% Request.
 	pid = undefined :: pid(),
@@ -574,6 +579,11 @@ body_length(Req) ->
 			{undefined, Req2}
 	end.
 
+%% Set the transport timeout for body streaming
+-spec set_timeout(non_neg_integer(), Req) -> {ok, Req}.
+set_timeout(Timeout, Req) ->
+  {ok, Req#http_req{timeout=Timeout}}.
+
 %% @doc Initialize body streaming and set custom decoding functions.
 %%
 %% Calling this function is optional. It should only be used if you
@@ -658,10 +668,9 @@ stream_body(MaxLength, Req) ->
 -spec stream_body_recv(non_neg_integer(), Req)
 	-> {ok, binary(), Req} | {error, atom()} when Req::req().
 stream_body_recv(MaxLength, Req=#http_req{
-		transport=Transport, socket=Socket, buffer=Buffer,
+		transport=Transport, socket=Socket, buffer=Buffer, timeout=Timeout,
 		body_state={stream, Length, _, _, _}}) ->
-	%% @todo Allow configuring the timeout.
-	case Transport:recv(Socket, min(Length, MaxLength), 5000) of
+	case Transport:recv(Socket, min(Length, MaxLength), Timeout) of
 		{ok, Data} -> transfer_decode(<< Buffer/binary, Data/binary >>,
 			Req#http_req{buffer= <<>>});
 		{error, Reason} -> {error, Reason}
